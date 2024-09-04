@@ -6,7 +6,7 @@ import os
 
 class Linear_QNet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
-        super().__init__()
+        super(Linear_QNet, self).__init__()
         self.linear1 = nn.Linear(input_size, hidden_size)
         self.linear2 = nn.Linear(hidden_size, output_size)
 
@@ -29,42 +29,40 @@ class QTrainer:
         self.lr = lr
         self.gamma = gamma
         self.model = model
+        self.target_model = Linear_QNet(model.linear1.in_features, model.linear1.out_features, model.linear2.out_features)
+        self.update_target_model()  # Initialize target model with same weights as model
         self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
         self.criterion = nn.MSELoss()
+
+    def update_target_model(self):
+        self.target_model.load_state_dict(self.model.state_dict())
 
     def train_step(self, state, action, reward, next_state, done):
         state = torch.tensor(state, dtype=torch.float)
         next_state = torch.tensor(next_state, dtype=torch.float)
         action = torch.tensor(action, dtype=torch.long)
         reward = torch.tensor(reward, dtype=torch.float)
-        # (n, x)
 
         if len(state.shape) == 1:
-            # (1, x)
             state = torch.unsqueeze(state, 0)
             next_state = torch.unsqueeze(next_state, 0)
             action = torch.unsqueeze(action, 0)
             reward = torch.unsqueeze(reward, 0)
             done = (done, )
 
-        # 1: predicted Q values with current state
+        # Predicted Q-values with current state
         pred = self.model(state)
 
         target = pred.clone()
+        action_indices = [torch.argmax(action[idx]).item() for idx in range(len(done))]
         for idx in range(len(done)):
             Q_new = reward[idx]
             if not done[idx]:
-                Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
+                Q_new = reward[idx] + self.gamma * torch.max(self.target_model(next_state[idx])).detach()
+            
+            target[idx][action_indices[idx]] = Q_new
 
-            target[idx][torch.argmax(action[idx]).item()] = Q_new
-    
-        # 2: Q_new = r + y * max(next_predicted Q value) -> only do this if not done
-        # pred.clone()
-        # preds[argmax(action)] = Q_new
         self.optimizer.zero_grad()
         loss = self.criterion(target, pred)
         loss.backward()
-
         self.optimizer.step()
-
-

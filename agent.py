@@ -5,6 +5,7 @@ from collections import deque
 from game import SnakeGameAI, Direction, Point
 from model import Linear_QNet, QTrainer
 from helper import plot
+import pandas as pd
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -19,7 +20,7 @@ class Agent:
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
         self.model = Linear_QNet(11, 256, 3)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
-
+        self.data = []
 
 
     def get_state(self, game):
@@ -99,6 +100,14 @@ class Agent:
             final_move[move] = 1
 
         return final_move
+    
+    
+    
+    def save_data(self):  # Funkcija za spremanje podataka
+        df = pd.DataFrame(self.data, columns=['state', 'action', 'reward', 'next_state', 'done'])
+        df.to_csv('game_data.csv', index=False)
+        
+        
 
 
 def train():
@@ -124,6 +133,12 @@ def train():
 
         # remember
         agent.remember(state_old, final_move, reward, state_new, done)
+        
+        
+        # collect data for EDA
+        agent.data.append((state_old, final_move, reward, state_new, done))  # Prikupljanje podataka
+        
+        
 
         if done:
             # train long memory, plot result
@@ -136,12 +151,23 @@ def train():
                 agent.model.save()
 
             print('Game', agent.n_games, 'Score', score, 'Record:', record)
+            
+            if agent.n_games % 10 == 0:
+                agent.trainer.update_target_model()
 
             plot_scores.append(score)
             total_score += score
             mean_score = total_score / agent.n_games
             plot_mean_scores.append(mean_score)
             plot(plot_scores, plot_mean_scores)
+            
+            
+            
+            # Save data after every game
+            if agent.n_games % 10 == 0:
+                agent.save_data()
+                
+                
 
 
 if __name__ == '__main__':
